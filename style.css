@@ -1,0 +1,146 @@
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Inter:wght@400;500;600;700&display=swap');
+
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #10192E;
+  --panel: #182644;
+  --panel-2: #1F3054;
+  --line: rgba(255,255,255,0.08);
+  --text: #EDEFF5;
+  --text-dim: #9AA6C0;
+  --gold: #D4A039;
+  --blue: #7CA8C9;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.fpb-root {
+  min-height: 100vh;
+  max-width: 480px;
+  margin: 0 auto;
+  padding-bottom: 40px;
+  position: relative;
+}
+
+.fpb-header { padding: 22px 20px 8px; }
+.fpb-eyebrow { font-family: 'Bebas Neue', sans-serif; letter-spacing: 0.18em; font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
+.fpb-header-row { display:flex; align-items:center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.fpb-header-actions { display:flex; align-items:center; gap: 6px; }
+.fpb-role-badge { font-size: 11px; color: var(--text-dim); font-weight: 600; }
+
+.fpb-kidtabs { display:flex; gap: 8px; flex-wrap: wrap; }
+.fpb-kidtab {
+  background: transparent; border: 1.5px solid var(--line); color: var(--text-dim);
+  padding: 7px 16px; border-radius: 999px; font-weight: 600; font-size: 14px; cursor: pointer;
+}
+.fpb-kidtab.active { border-color: var(--accent, var(--gold)); color: var(--bg); background: var(--accent, var(--gold)); }
+
+.fpb-icon-btn {
+  background: var(--panel); border: 1px solid var(--line); color: var(--text);
+  width: 36px; height: 36px; border-radius: 10px;
+  display:flex; align-items:center; justify-content:center; cursor: pointer; font-size: 15px;
+}
+.fpb-icon-btn.add { background: var(--gold); border-color: var(--gold); color: #1a1204; }
+.fpb-icon-btn:hover { filter: brightness(1.15); }
+.fpb-textbtn { background: transparent; border: none; color: var(--text-dim); font-weight: 600; cursor: pointer; padding: 8px; }
+
+.fpb-hero {
+  margin: 14px 20px 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 20px;
+  padding: 24px 20px 20px; text-align: center;
+}
+.fpb-hero-label { font-size: 11px; letter-spacing: 0.16em; color: var(--text-dim); font-weight: 700; }
+.fpb-hero-sub { margin-top: 10px; display:flex; align-items:center; justify-content:center; gap: 6px; color: var(--gold); font-size: 13px; font-weight: 600; }
+
+.fpb-scoreboard { display:flex; justify-content:center; gap: 6px; margin: 12px 0 2px; }
+.fpb-digit {
+  display:inline-block; width: 42px; height: 62px; overflow: hidden; background: #0B1220;
+  border-radius: 8px; border: 1px solid var(--line); position: relative; box-shadow: inset 0 2px 6px rgba(0,0,0,0.5);
+}
+.fpb-digit span { display:block; height: 62px; display:flex; align-items:center; justify-content:center; font-family: 'Bebas Neue', sans-serif; font-size: 40px; color: var(--gold); }
+
+.fpb-tabs { display:flex; margin: 18px 20px 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 4px; flex-wrap: wrap; }
+.fpb-tab { flex:1; min-width: 70px; background: transparent; border: none; color: var(--text-dim); font-weight: 600; font-size: 13px; padding: 9px 4px; border-radius: 9px; cursor:pointer; position: relative; }
+.fpb-tab.active { background: var(--panel-2); color: var(--text); }
+.fpb-badge { background: #E56A6A; color: white; font-size: 10px; padding: 1px 6px; border-radius: 999px; margin-left: 4px; }
+
+.fpb-main { padding: 14px 20px 10px; }
+.fpb-grid { display:grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.fpb-card {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 12px; text-align: left;
+  cursor: pointer; display:flex; flex-direction:column; gap: 10px; min-height: 78px;
+}
+.fpb-card:active { transform: scale(0.97); }
+.fpb-card.locked { opacity: 0.4; cursor: not-allowed; }
+.fpb-card-name { font-size: 13.5px; font-weight: 600; line-height: 1.3; }
+.fpb-card-points { font-family: 'Bebas Neue', sans-serif; font-size: 20px; color: var(--gold); }
+.fpb-card--redeem .fpb-card-points { color: var(--blue); }
+
+.fpb-empty { grid-column: 1 / -1; color: var(--text-dim); text-align:center; padding: 30px 10px; font-size: 14px; }
+
+.fpb-history { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap: 8px; }
+.fpb-history-row { display:flex; align-items:center; justify-content:space-between; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; gap: 8px; }
+.fpb-history-main { display:flex; align-items:center; gap: 10px; }
+.fpb-history-dot { width:8px; height:8px; border-radius:50%; background: var(--gold); flex-shrink:0; }
+.fpb-history-dot.redeem { background: var(--blue); }
+.fpb-history-dot.pending { background: #E5B45A; }
+.fpb-history-name { font-size: 13.5px; font-weight: 600; }
+.fpb-history-date { font-size: 11.5px; color: var(--text-dim); margin-top: 1px; }
+.fpb-history-sub { font-size: 11px; color: var(--text-dim); }
+.fpb-history-right { display:flex; align-items:center; gap: 8px; }
+.fpb-history-points { font-family:'Bebas Neue', sans-serif; font-size: 17px; color: var(--gold); }
+.fpb-history-points.redeem { color: var(--blue); }
+.fpb-pending-tag { font-size: 10px; background: #E5B45A; color: #2a1c04; padding: 2px 7px; border-radius: 999px; font-weight: 700; }
+
+.fpb-approve-actions { display:flex; gap: 6px; }
+.fpb-approve-btn, .fpb-reject-btn { border: none; border-radius: 8px; padding: 6px 10px; font-size: 12px; font-weight: 700; cursor: pointer; }
+.fpb-approve-btn { background: #6FBF73; color: #06280a; }
+.fpb-reject-btn { background: #E56A6A; color: #2a0808; }
+
+.fpb-chart-wrap { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 14px; }
+.fpb-weeklist { display:flex; flex-direction:column; gap: 8px; }
+.fpb-week-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+.fpb-week-head { display:flex; justify-content:space-between; align-items:center; cursor:pointer; font-weight: 700; font-size: 13.5px; }
+.fpb-week-total { color: var(--gold); font-family:'Bebas Neue',sans-serif; font-size: 18px; }
+.fpb-week-items { margin-top: 8px; display:flex; flex-direction:column; gap: 6px; }
+.fpb-week-item { display:flex; justify-content:space-between; font-size: 12.5px; color: var(--text-dim); }
+
+.fpb-toast {
+  position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+  background: var(--gold); color: #1a1204; font-weight: 700; font-size: 13.5px;
+  padding: 10px 18px; border-radius: 999px; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+  max-width: 90%; text-align:center; z-index: 50;
+}
+
+.fpb-modal-backdrop { position: fixed; inset:0; background: rgba(6,10,20,0.65); display:flex; align-items:flex-end; justify-content:center; z-index: 60; }
+.fpb-modal { background: var(--panel); width: 100%; max-width: 480px; border-radius: 20px 20px 0 0; padding: 18px 20px 28px; max-height: 82vh; overflow-y: auto; border-top: 1px solid var(--line); }
+.fpb-modal-head { display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size: 16px; margin-bottom: 14px; }
+.fpb-modal-tabs { display:flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+.fpb-modal-tabs button { flex:1; min-width: 70px; background: var(--panel-2); border: 1px solid var(--line); color: var(--text-dim); padding: 8px 6px; border-radius: 9px; font-weight:600; font-size: 12.5px; cursor:pointer; }
+.fpb-modal-tabs button.active { color: var(--text); border-color: var(--gold); }
+.fpb-modal-list { list-style:none; margin:0 0 12px; padding:0; display:flex; flex-direction:column; gap:6px; max-height: 260px; overflow-y:auto; }
+.fpb-modal-list li { display:flex; align-items:center; justify-content:space-between; background: var(--panel-2); border-radius: 10px; padding: 9px 12px; font-size: 13.5px; }
+.fpb-modal-list-right { display:flex; align-items:center; gap: 8px; color: var(--gold); font-weight:700; font-size: 13px; }
+.fpb-kid-swatch { display:inline-block; width:10px; height:10px; border-radius:50%; margin-right:8px; }
+.fpb-modal-add { display:flex; gap: 8px; align-items:center; }
+.fpb-modal-add input { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 10px 12px; font-size: 13.5px; outline:none; }
+.fpb-modal-add input:focus { border-color: var(--gold); }
+.fpb-modal-add input:first-child { flex: 1; }
+.fpb-modal-add-num { width: 64px; }
+
+.fpb-whoami-list { display:flex; flex-direction:column; gap: 8px; margin-bottom: 14px; }
+.fpb-whoami-btn { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); padding: 14px; border-radius: 12px; font-weight: 700; font-size: 15px; cursor: pointer; text-align: left; }
+.fpb-pin-input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--text); border-radius: 10px; padding: 12px; font-size: 20px; letter-spacing: 6px; text-align: center; outline: none; }
+.fpb-pin-input:focus { border-color: var(--gold); }
+.fpb-pin-error { color: #E56A6A; font-size: 12.5px; margin-top: 8px; }
+.fpb-hint { color: var(--text-dim); font-size: 12.5px; margin: 0 0 10px; }
+
+@media (max-width: 380px) {
+  .fpb-digit { width: 34px; height: 52px; }
+  .fpb-digit span { height: 52px; font-size: 32px; }
+}
