@@ -6,10 +6,17 @@
 <meta name="color-scheme" content="dark" />
 <title>Family Points Board</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>" />
-<link rel="stylesheet" href="style.css" />
+<!-- Critical rule inlined: guarantees hidden elements stay hidden even if style.css
+     is stale, cached, or fails to load. Do not remove. -->
+<style>[hidden] { display: none !important; }</style>
+<link rel="stylesheet" href="style.css?v=4" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
+
+<!-- Side photo panels (wide screens only) -->
+<aside id="sideLeft" class="fpb-side left"></aside>
+<aside id="sideRight" class="fpb-side right"></aside>
 
 <div id="root" class="fpb-root">
 
@@ -30,7 +37,7 @@
       <div id="pinError" class="fpb-pin-error" hidden>Incorrect PIN. Try again.</div>
       <div class="fpb-modal-add" style="margin-top:12px;justify-content:flex-end;">
         <button id="pinCancel" class="fpb-textbtn">Cancel</button>
-        <button id="pinSubmit" class="fpb-icon-btn add" style="width:auto;padding:0 20px;height:40px;font-size:14px;">Unlock</button>
+        <button id="pinSubmit" class="fpb-btn-wide">Unlock</button>
       </div>
     </div>
   </div>
@@ -83,7 +90,7 @@
 
     <div id="view-trends" class="fpb-view" hidden>
       <div class="fpb-chart-wrap">
-        <canvas id="trendChart" height="180"></canvas>
+        <div class="fpb-chart-box"><canvas id="trendChart"></canvas></div>
         <div id="chartFallback" class="fpb-chart-fallback" hidden>
           Graph unavailable — the chart library didn't load. The weekly breakdown below still works.
         </div>
@@ -104,24 +111,50 @@
         <button class="active" data-stab="activities">Activities</button>
         <button data-stab="rewards">Rewards</button>
         <button data-stab="kids">Kids</button>
+        <button data-stab="display">Display</button>
         <button data-stab="pin">PIN</button>
       </div>
+
       <div id="stab-activities" class="fpb-stab-panel"></div>
       <div id="stab-rewards" class="fpb-stab-panel" hidden></div>
       <div id="stab-kids" class="fpb-stab-panel" hidden></div>
+
+      <div id="stab-display" class="fpb-stab-panel" hidden>
+        <span class="fpb-field-label">TEXT SIZE</span>
+        <p class="fpb-hint">Applies to this device only, so a laptop and a phone can each use what suits them.</p>
+        <div id="sizeRow" class="fpb-size-row">
+          <button class="fpb-size-btn" data-scale="1">Normal</button>
+          <button class="fpb-size-btn" data-scale="1.25">Large</button>
+          <button class="fpb-size-btn" data-scale="1.5">Larger</button>
+          <button class="fpb-size-btn" data-scale="2">Double</button>
+        </div>
+
+        <span class="fpb-field-label">SIDE PANEL PHOTOS</span>
+        <p class="fpb-hint">
+          Fills the empty space either side on wide screens. Paste a direct image link
+          (one ending in .jpg or .png). These are shared across all devices.
+          Leave blank to hide a panel.
+        </p>
+        <input id="leftImg" class="fpb-text-input" type="url" placeholder="Left image URL" />
+        <input id="leftCap" class="fpb-text-input" type="text" maxlength="40" placeholder="Left caption (optional)" />
+        <input id="rightImg" class="fpb-text-input" type="url" placeholder="Right image URL" />
+        <input id="rightCap" class="fpb-text-input" type="text" maxlength="40" placeholder="Right caption (optional)" />
+        <button id="saveSideBtn" class="fpb-btn-wide">Save photos</button>
+      </div>
+
       <div id="stab-pin" class="fpb-stab-panel" hidden>
         <p class="fpb-hint">
           Change the parent PIN. Note this is a convenience lock to stop casual tampering,
           not real security — a determined child could find it in the browser tools.
         </p>
         <input id="newPinInput" class="fpb-pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="New PIN" />
-        <button id="savePinBtn" class="fpb-icon-btn add" style="width:auto;padding:0 20px;height:40px;font-size:14px;margin-top:12px;">Save PIN</button>
+        <button id="savePinBtn" class="fpb-btn-wide" style="margin-top:12px;">Save PIN</button>
       </div>
     </div>
   </div>
 
 </div>
 
-<script type="module" src="app.js"></script>
+<script type="module" src="app.js?v=4"></script>
 </body>
 </html>

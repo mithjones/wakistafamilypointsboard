@@ -53,6 +53,92 @@ let confirmResolver = null;
 const $ = (sel) => document.querySelector(sel);
 const $all = (sel) => Array.from(document.querySelectorAll(sel));
 
+/* ---------------- text size (per device) ---------------- */
+
+const SCALES = ["1", "1.25", "1.5", "2"];
+
+function currentScale() {
+  const s = localStorage.getItem("fpb_scale");
+  return SCALES.includes(s) ? s : "1.5";
+}
+
+function applyScale(v) {
+  document.documentElement.style.setProperty("--fs", v);
+  localStorage.setItem("fpb_scale", v);
+  $all("#sizeRow .fpb-size-btn").forEach((b) => b.classList.toggle("active", b.dataset.scale === v));
+  // Chart text is drawn on canvas, so it needs an explicit rebuild to resize.
+  lastChartKey = "";
+  if (currentTab === "trends") renderTrends();
+  if (family) setTimeout(enforceSideRoom, 0);
+}
+
+applyScale(currentScale());
+
+$all("#sizeRow .fpb-size-btn").forEach((btn) => {
+  btn.onclick = () => applyScale(btn.dataset.scale);
+});
+
+/* ---------------- side photo panels ---------------- */
+
+function isSafeImageUrl(u) {
+  if (!u) return false;
+  try {
+    const parsed = new URL(u);
+    return parsed.protocol === "https:" || parsed.protocol === "http:";
+  } catch { return false; }
+}
+
+function renderSidePanels() {
+  const cfg = family?.sidePanels || {};
+  [["left", "#sideLeft"], ["right", "#sideRight"]].forEach(([side, sel]) => {
+    const el = $(sel);
+    const url = cfg[side + "Img"];
+    const cap = cfg[side + "Cap"];
+    if (!isSafeImageUrl(url)) {
+      el.innerHTML = "";
+      el.classList.remove("visible");
+      return;
+    }
+    el.innerHTML = "";
+    const inner = document.createElement("div");
+    inner.className = "fpb-side-inner";
+    const img = document.createElement("img");
+    img.src = url;
+    img.alt = cap || "";
+    // A broken link shouldn't leave an empty grey box sitting there.
+    img.onerror = () => { el.classList.remove("visible"); el.innerHTML = ""; };
+    inner.appendChild(img);
+    if (cap) {
+      const c = document.createElement("div");
+      c.className = "fpb-side-cap";
+      c.textContent = cap;
+      inner.appendChild(c);
+    }
+    el.appendChild(inner);
+    el.classList.add("visible");
+  });
+  enforceSideRoom();
+}
+
+/** Panel width depends on both viewport and text scale, so check the real number
+ *  rather than trusting a media query — otherwise Double size on a small laptop
+ *  squeezes the panels into slivers. */
+function enforceSideRoom() {
+  const column = document.querySelector(".fpb-root")?.offsetWidth || 0;
+  const room = (window.innerWidth - column) / 2 - 56;
+  const enough = room >= 170;
+  [$("#sideLeft"), $("#sideRight")].forEach((el) => {
+    if (!el) return;
+    el.style.visibility = enough ? "visible" : "hidden";
+  });
+}
+
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(enforceSideRoom, 120);
+});
+
 /* ---------------- utilities ---------------- */
 
 function toast(msg, isError = false) {
@@ -166,6 +252,7 @@ function listenFamily() {
         activities: d?.activities || [],
         rewards: d?.rewards || [],
         parentPin: d?.parentPin || DEFAULTS.parentPin,
+        sidePanels: d?.sidePanels || {},
       };
       resolveActiveKid();
       maybeShowWhoAmI();
@@ -340,6 +427,7 @@ function renderAll() {
   renderScoreboard();
   renderCurrentView();
   renderApprovalBadge();
+  renderSidePanels();
 }
 
 function renderRoleBadge() {
@@ -735,7 +823,36 @@ function renderSettings() {
   renderStabList("activities", family.activities, "points");
   renderStabList("rewards", family.rewards, "cost");
   renderKidsStab();
+  renderDisplayStab();
 }
+
+function renderDisplayStab() {
+  const cfg = family?.sidePanels || {};
+  // Don't clobber what the parent is mid-way through typing.
+  if (document.activeElement?.closest("#stab-display")) return;
+  $("#leftImg").value = cfg.leftImg || "";
+  $("#leftCap").value = cfg.leftCap || "";
+  $("#rightImg").value = cfg.rightImg || "";
+  $("#rightCap").value = cfg.rightCap || "";
+  $all("#sizeRow .fpb-size-btn").forEach((b) => b.classList.toggle("active", b.dataset.scale === currentScale()));
+}
+
+$("#saveSideBtn").onclick = async () => {
+  const payload = {
+    leftImg: $("#leftImg").value.trim(),
+    leftCap: $("#leftCap").value.trim(),
+    rightImg: $("#rightImg").value.trim(),
+    rightCap: $("#rightCap").value.trim(),
+  };
+  for (const key of ["leftImg", "rightImg"]) {
+    if (payload[key] && !isSafeImageUrl(payload[key])) {
+      toast("That doesn't look like a valid image link", true);
+      return;
+    }
+  }
+  const ok = await safeWrite(() => updateDoc(familyRef, { sidePanels: payload }), "Couldn't save photos");
+  if (ok) toast("Photos updated");
+};
 
 function renderStabList(key, list, valueKey) {
   const panel = $("#stab-" + key);
