@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="dark" />
 <title>Family Points Board</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏆</text></svg>" />
 <link rel="stylesheet" href="style.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
@@ -11,9 +13,9 @@
 
 <div id="root" class="fpb-root">
 
-  <!-- Who am I picker (first load on a device) -->
+  <!-- Who am I picker -->
   <div id="whoami" class="fpb-modal-backdrop" hidden>
-    <div class="fpb-modal">
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="Choose who is using this device">
       <div class="fpb-modal-head"><span>Who's using this device?</span></div>
       <div id="whoami-kids" class="fpb-whoami-list"></div>
       <button id="whoami-parent-btn" class="fpb-textbtn">I'm the parent</button>
@@ -22,14 +24,26 @@
 
   <!-- Parent PIN prompt -->
   <div id="pinModal" class="fpb-modal-backdrop" hidden>
-    <div class="fpb-modal">
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="Enter parent PIN">
       <div class="fpb-modal-head"><span id="pinTitle">Enter parent PIN</span></div>
-      <input id="pinInput" class="fpb-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••" />
-      <div class="fpb-modal-add">
-        <button id="pinCancel" class="fpb-textbtn">Cancel</button>
-        <button id="pinSubmit" class="fpb-icon-btn add" style="width:auto;padding:0 18px;">Go</button>
-      </div>
+      <input id="pinInput" class="fpb-pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="••••" />
       <div id="pinError" class="fpb-pin-error" hidden>Incorrect PIN. Try again.</div>
+      <div class="fpb-modal-add" style="margin-top:12px;justify-content:flex-end;">
+        <button id="pinCancel" class="fpb-textbtn">Cancel</button>
+        <button id="pinSubmit" class="fpb-icon-btn add" style="width:auto;padding:0 20px;height:40px;font-size:14px;">Unlock</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Generic confirm dialog -->
+  <div id="confirmModal" class="fpb-modal-backdrop" hidden>
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+      <div class="fpb-modal-head"><span id="confirmTitle">Are you sure?</span></div>
+      <p id="confirmBody" class="fpb-hint"></p>
+      <div class="fpb-modal-add" style="justify-content:flex-end;">
+        <button id="confirmCancel" class="fpb-textbtn">Cancel</button>
+        <button id="confirmOk" class="fpb-reject-btn" style="padding:10px 18px;">Delete</button>
+      </div>
     </div>
   </div>
 
@@ -39,16 +53,19 @@
       <div id="kidtabs" class="fpb-kidtabs"></div>
       <div class="fpb-header-actions">
         <span id="roleBadge" class="fpb-role-badge"></span>
-        <button id="switchUserBtn" class="fpb-icon-btn" title="Switch user">⇄</button>
-        <button id="settingsBtn" class="fpb-icon-btn" title="Settings" hidden>⚙</button>
+        <button id="switchUserBtn" class="fpb-icon-btn" title="Switch user" aria-label="Switch user">⇄</button>
+        <button id="settingsBtn" class="fpb-icon-btn" title="Settings" aria-label="Settings" hidden>⚙</button>
       </div>
     </div>
   </header>
 
+  <div id="connBanner" class="fpb-conn" hidden></div>
+
   <section class="fpb-hero">
     <div class="fpb-hero-label">CURRENT BALANCE</div>
-    <div id="scoreboard" class="fpb-scoreboard"></div>
-    <div class="fpb-hero-sub"><span>🏆</span><span id="weekPoints">0 pts earned this week</span></div>
+    <div id="scoreboard" class="fpb-scoreboard" aria-live="polite"></div>
+    <div class="fpb-hero-sub"><span aria-hidden="true">🏆</span><span id="weekPoints">0 pts earned this week</span></div>
+    <div id="heroPending" class="fpb-hero-pending" hidden></div>
   </section>
 
   <nav class="fpb-tabs" id="tabs">
@@ -61,25 +78,28 @@
 
   <main class="fpb-main">
     <div id="view-earn" class="fpb-view"><div id="earnGrid" class="fpb-grid"></div></div>
-
     <div id="view-redeem" class="fpb-view" hidden><div id="redeemGrid" class="fpb-grid"></div></div>
-
     <div id="view-history" class="fpb-view" hidden><ul id="historyList" class="fpb-history"></ul></div>
 
     <div id="view-trends" class="fpb-view" hidden>
-      <div class="fpb-chart-wrap"><canvas id="trendChart" height="180"></canvas></div>
+      <div class="fpb-chart-wrap">
+        <canvas id="trendChart" height="180"></canvas>
+        <div id="chartFallback" class="fpb-chart-fallback" hidden>
+          Graph unavailable — the chart library didn't load. The weekly breakdown below still works.
+        </div>
+      </div>
       <div id="weekList" class="fpb-weeklist"></div>
     </div>
 
     <div id="view-approvals" class="fpb-view" hidden><ul id="approvalsList" class="fpb-history"></ul></div>
   </main>
 
-  <div id="toast" class="fpb-toast" hidden></div>
+  <div id="toast" class="fpb-toast" role="status" hidden></div>
 
   <!-- Settings panel -->
   <div id="settingsModal" class="fpb-modal-backdrop" hidden>
-    <div class="fpb-modal">
-      <div class="fpb-modal-head"><span>Settings</span><button id="settingsClose" class="fpb-icon-btn">✕</button></div>
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="fpb-modal-head"><span>Settings</span><button id="settingsClose" class="fpb-icon-btn" aria-label="Close settings">✕</button></div>
       <div class="fpb-modal-tabs">
         <button class="active" data-stab="activities">Activities</button>
         <button data-stab="rewards">Rewards</button>
@@ -90,9 +110,12 @@
       <div id="stab-rewards" class="fpb-stab-panel" hidden></div>
       <div id="stab-kids" class="fpb-stab-panel" hidden></div>
       <div id="stab-pin" class="fpb-stab-panel" hidden>
-        <p class="fpb-hint">Change the parent PIN.</p>
-        <input id="newPinInput" class="fpb-pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="New PIN" />
-        <button id="savePinBtn" class="fpb-icon-btn add" style="width:auto;padding:0 18px;margin-top:10px;">Save PIN</button>
+        <p class="fpb-hint">
+          Change the parent PIN. Note this is a convenience lock to stop casual tampering,
+          not real security — a determined child could find it in the browser tools.
+        </p>
+        <input id="newPinInput" class="fpb-pin-input" type="password" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="New PIN" />
+        <button id="savePinBtn" class="fpb-icon-btn add" style="width:auto;padding:0 20px;height:40px;font-size:14px;margin-top:12px;">Save PIN</button>
       </div>
     </div>
   </div>
