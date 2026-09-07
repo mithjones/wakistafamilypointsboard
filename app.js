@@ -21,13 +21,14 @@ const DEFAULTS = {
     { id: "rian", name: "Rian", accent: "#7CA8C9" },
   ],
   activities: [
-    { id: "a1", name: "Basketball practice (extra)", points: 15 },
-    { id: "a2", name: "Reading — 30 min", points: 10 },
-    { id: "a3", name: "Chores", points: 5 },
-    { id: "a4", name: "Dishes", points: 5 },
-    { id: "a5", name: "Swim laps (extra)", points: 15 },
-    { id: "a6", name: "Helped a sibling", points: 10 },
+    { id: "a1", name: "Basketball practice (extra)", points: 15, category: "Extra effort" },
+    { id: "a2", name: "Reading — 30 min", points: 10, category: "Extra effort" },
+    { id: "a3", name: "Tidy bedroom", points: 5, category: "Chores" },
+    { id: "a4", name: "Dishes", points: 5, category: "Chores" },
+    { id: "a5", name: "Swim laps (extra)", points: 15, category: "Extra effort" },
+    { id: "a6", name: "Helped a sibling", points: 10, category: "Extra effort" },
   ],
+  habits: [],
   rewards: [
     { id: "r1", name: "Restaurant of choice", cost: 100 },
     { id: "r2", name: "30 min YouTube", cost: 20 },
@@ -185,6 +186,116 @@ function uidLocal() {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
+/* ---------------- habit dates & streaks ---------------- */
+
+/** Local calendar day key. Deliberately not UTC — a 9pm tick in Melbourne must
+ *  belong to that day, not tomorrow. */
+function dayKey(d) {
+  const x = new Date(d);
+  if (isNaN(x.getTime())) return null;
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+function dayFromKey(k) {
+  const [y, m, d] = k.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+function addDays(d, n) {
+  const x = new Date(d);
+  x.setDate(x.getDate() + n);
+  return x;
+}
+
+const REST_DAY_GAP = 14;   // one rest day per fortnight
+const DAILY_BADGES = [3, 7, 14, 30, 60, 100];
+const WEEKLY_BADGES = [2, 4, 8, 12, 26];
+
+/** Ticks for one habit, as a Set of day keys. `approvedOnly` drives badges;
+ *  including pending drives the on-screen streak so kids get instant feedback. */
+function habitTickDays(habitId, approvedOnly) {
+  const set = new Set();
+  entries.forEach((e) => {
+    // Badge bonuses also carry a habitId; they are rewards, not ticks.
+    if (e.source !== "habit") return;
+    if (e.habitId !== habitId) return;
+    if (e.status === "rejected") return;
+    if (approvedOnly && e.status !== "approved") return;
+    const k = e.dayKey || dayKey(e.date);
+    if (k) set.add(k);
+  });
+  return set;
+}
+
+/**
+ * Walks forward from the first tick to today, counting consecutive days.
+ * A single missed day can be bridged by a "rest day", but only if no other
+ * rest day was used in the previous fortnight. Today never breaks a streak,
+ * since the day isn't over yet.
+ */
+function dailyStreak(tickDays) {
+  if (!tickDays.size) return { current: 0, best: 0, restUsedOn: null };
+  const keys = [...tickDays].sort();
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayK = dayKey(today);
+
+  let run = 0, best = 0, lastRest = null, restUsedOn = null;
+  for (let d = dayFromKey(keys[0]); dayKey(d) <= todayK; d = addDays(d, 1)) {
+    const k = dayKey(d);
+    if (tickDays.has(k)) {
+      run++;
+      if (run > best) best = run;
+    } else if (k === todayK) {
+      // Day still in progress — neither counts nor breaks.
+    } else if (run > 0 && (!lastRest || (d - lastRest) / 86400000 >= REST_DAY_GAP)) {
+      lastRest = d;
+      restUsedOn = k;
+    } else {
+      run = 0;
+      lastRest = null;
+      restUsedOn = null;
+    }
+  }
+  return { current: run, best, restUsedOn };
+}
+
+/** Weekly-target habits: a streak is consecutive weeks that met the target.
+ *  The current week is never counted as a failure while it's still running. */
+function weeklyStreak(tickDays, target) {
+  if (!tickDays.size) return { current: 0, best: 0, thisWeek: 0 };
+  const keys = [...tickDays].sort();
+  const countIn = (ws) => {
+    const we = endOfWeek(ws);
+    return [...tickDays].filter((k) => {
+      const d = dayFromKey(k);
+      return d >= ws && d <= we;
+    }).length;
+  };
+  const thisWeekStart = startOfWeek(new Date());
+  let run = 0, best = 0;
+  for (let ws = startOfWeek(dayFromKey(keys[0])); ws <= thisWeekStart; ws = addDays(ws, 7)) {
+    const hit = countIn(ws) >= target;
+    const isCurrent = ws.getTime() === thisWeekStart.getTime();
+    if (hit) {
+      run++;
+      if (run > best) best = run;
+    } else if (!isCurrent) {
+      run = 0;
+    }
+  }
+  return { current: run, best, thisWeek: countIn(thisWeekStart) };
+}
+
+function streakFor(habit, approvedOnly = false) {
+  const days = habitTickDays(habit.id, approvedOnly);
+  return habit.cadence === "weekly"
+    ? { ...weeklyStreak(days, habit.target || 3), days, unit: "week" }
+    : { ...dailyStreak(days), days, unit: "day" };
+}
+
+function badgeLadder(habit) {
+  return habit.cadence === "weekly" ? WEEKLY_BADGES : DAILY_BADGES;
+}
+
 function entryDate(e) {
   const d = new Date(e.date);
   return isNaN(d.getTime()) ? new Date(0) : d;
@@ -251,6 +362,7 @@ function listenFamily() {
         kids: d?.kids || [],
         activities: d?.activities || [],
         rewards: d?.rewards || [],
+        habits: d?.habits || [],
         parentPin: d?.parentPin || DEFAULTS.parentPin,
         sidePanels: d?.sidePanels || {},
       };
@@ -270,6 +382,8 @@ function listenEntries() {
       entries = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       entriesLoaded = true;
       renderAll();
+      ensureBadges();
+      ensureWeeklyBonuses();
     },
     (err) => { console.error(err); banner("Lost connection to the database."); }
   );
@@ -390,6 +504,7 @@ function renderCurrentView() {
   if (!family) return;
   ({
     earn: renderEarnGrid,
+    habits: renderHabits,
     redeem: renderRedeemGrid,
     history: renderHistory,
     trends: renderTrends,
@@ -502,6 +617,7 @@ function renderScoreboard() {
 function renderEarnGrid() {
   const grid = $("#earnGrid");
   grid.innerHTML = "";
+  grid.className = "fpb-grid";
   const acts = family?.activities || [];
   if (!acts.length) {
     grid.innerHTML = '<div class="fpb-empty">No activities set up yet. A parent can add them in Settings.</div>';
@@ -511,12 +627,40 @@ function renderEarnGrid() {
     grid.innerHTML = '<div class="fpb-empty">Add a child in Settings to start logging.</div>';
     return;
   }
-  acts.forEach((a) => {
+  const makeCard = (a) => {
     const b = document.createElement("button");
     b.className = "fpb-card fpb-card--earn";
     b.innerHTML = `<span class="fpb-card-name">${escapeHtml(a.name)}</span><span class="fpb-card-points">+${a.points}</span>`;
     b.onclick = () => submitEarn(a, b);
-    grid.appendChild(b);
+    return b;
+  };
+
+  // Only group once categories are actually in use, so an older list that
+  // predates this feature still renders as a plain grid.
+  const anyCategory = acts.some((a) => a.category && a.category.trim());
+  if (!anyCategory) {
+    acts.forEach((a) => grid.appendChild(makeCard(a)));
+    return;
+  }
+
+  grid.classList.remove("fpb-grid");
+  grid.classList.add("fpb-grouped");
+  const order = [];
+  const buckets = new Map();
+  acts.forEach((a) => {
+    const cat = (a.category || "").trim() || "Other";
+    if (!buckets.has(cat)) { buckets.set(cat, []); order.push(cat); }
+    buckets.get(cat).push(a);
+  });
+  order.forEach((cat) => {
+    const h = document.createElement("div");
+    h.className = "fpb-group-head";
+    h.textContent = cat;
+    grid.appendChild(h);
+    const sub = document.createElement("div");
+    sub.className = "fpb-grid";
+    buckets.get(cat).forEach((a) => sub.appendChild(makeCard(a)));
+    grid.appendChild(sub);
   });
 }
 
@@ -597,6 +741,314 @@ async function submitRedeem(reward, btn) {
   if (btn) btn.disabled = false;
 }
 
+/* ---------------- habits ---------------- */
+
+const BADGE_BONUS = {
+  daily:  { 3: 10, 7: 25, 14: 50, 30: 100, 60: 200, 100: 350 },
+  weekly: { 2: 20, 4: 50, 8: 100, 12: 150, 26: 300 },
+};
+
+function habitsForKid(kidId) {
+  return (family?.habits || []).filter((h) => h.kidId === kidId);
+}
+
+function habitStatusToday(habitId) {
+  const todayK = dayKey(new Date());
+  const e = entries.find((x) => x.source === "habit" && x.habitId === habitId && (x.dayKey || dayKey(x.date)) === todayK && x.status !== "rejected");
+  return e ? e.status : null; // 'approved' | 'pending' | null
+}
+
+function renderHabits() {
+  const wrap = $("#habitList");
+  wrap.innerHTML = "";
+  if (!activeKid) {
+    wrap.innerHTML = '<div class="fpb-empty">Add a child in Settings first.</div>';
+    return;
+  }
+  const habits = habitsForKid(activeKid);
+  const kidName = (family?.kids || []).find((k) => k.id === activeKid)?.name || "";
+
+  if (!habits.length) {
+    wrap.innerHTML = `<div class="fpb-empty">No habits set up for ${escapeHtml(kidName)} yet.${role === "parent" ? " Add some in Settings → Habits." : ""}</div>`;
+    $("#habitSummary").hidden = true;
+    $("#badgeShelf").hidden = true;
+    return;
+  }
+
+  // Summary strip
+  const doneToday = habits.filter((h) => habitStatusToday(h.id)).length;
+  const streaks = habits.map((h) => streakFor(h).current);
+  const bestNow = streaks.length ? Math.max(...streaks) : 0;
+  const bestHabit = habits[streaks.indexOf(bestNow)];
+  $("#habitSummary").hidden = false;
+  $("#habitDone").textContent = `${doneToday} of ${habits.length}`;
+  $("#habitStreakBig").textContent = bestNow > 0
+    ? `${bestNow} ${bestHabit?.cadence === "weekly" ? (bestNow === 1 ? "week" : "weeks") : (bestNow === 1 ? "day" : "days")}`
+    : "—";
+  $("#habitStreakLabel").textContent = bestNow > 0 ? `Best run — ${bestHabit?.name || ""}` : "No streak running yet";
+
+  habits.forEach((h) => {
+    const s = streakFor(h);
+    const todayState = habitStatusToday(h.id);
+    const card = document.createElement("div");
+    card.className = "fpb-habit-card" + (s.current > 0 ? " hot" : "");
+
+    const isWeekly = h.cadence === "weekly";
+    const chip = isWeekly
+      ? `<span class="fpb-habit-chip">${s.thisWeek} of ${h.target} this week</span>`
+      : (s.current > 0
+          ? `<span class="fpb-habit-chip hot">🔥 ${s.current} in a row</span>`
+          : `<span class="fpb-habit-chip">Not started</span>`);
+
+    const cadenceText = isWeekly
+      ? `${h.target} times a week · ${h.points} pts`
+      : `Every day · ${h.points} pts`;
+
+    // Last 7 days, oldest to newest
+    let dots = "";
+    for (let i = 6; i >= 0; i--) {
+      const d = addDays(new Date(), -i);
+      const k = dayKey(d);
+      const letter = ["S", "M", "T", "W", "T", "F", "S"][d.getDay()];
+      const ent = entries.find((x) => x.source === "habit" && x.habitId === h.id && (x.dayKey || dayKey(x.date)) === k && x.status !== "rejected");
+      let cls = "empty";
+      let inner = "";
+      if (ent?.status === "approved") cls = "done";
+      else if (ent?.status === "pending") cls = "pending";
+      else if (k === s.restUsedOn) { cls = "rest"; inner = "🛡"; }
+      else if (i === 0) cls = "today";
+      dots += `<div class="fpb-dot-col"><div class="fpb-dot ${cls}">${inner}</div><span>${letter}</span></div>`;
+    }
+
+    // Next badge
+    const ladder = badgeLadder(h);
+    const next = ladder.find((m) => m > s.current);
+    const nextLine = next
+      ? `${next - s.current} more ${isWeekly ? (next - s.current === 1 ? "week" : "weeks") : (next - s.current === 1 ? "day" : "days")} to the ${next}-${isWeekly ? "week" : "day"} badge`
+      : "Every badge earned — outstanding";
+
+    // This week's progress toward the completion bonus
+    const bonus = Number(h.bonus) || 0;
+    const goal = weeklyGoal(h);
+    const thisWeekTicks = ticksInWeek(h.id, startOfWeek(new Date()));
+    let goalLine = "";
+    if (bonus > 0) {
+      const hit = thisWeekTicks >= goal;
+      const left = goal - thisWeekTicks;
+      goalLine = hit
+        ? `<div class="fpb-goal-line hit">✓ Weekly goal hit — +${bonus} pts banked</div>`
+        : `<div class="fpb-goal-line"><div class="fpb-goal-bar"><span style="width:${Math.min(100, Math.round((thisWeekTicks / goal) * 100))}%"></span></div><div class="fpb-goal-text">${thisWeekTicks} of ${goal} this week · ${left} more for +${bonus} pts</div></div>`;
+    }
+
+    let action;
+    if (todayState === "approved") {
+      action = `<button class="fpb-habit-btn done" disabled>✓ Done today</button>`;
+    } else if (todayState === "pending") {
+      action = `<div class="fpb-habit-pending">⏳ Ticked — waiting to be approved</div>`;
+    } else {
+      action = `<button class="fpb-habit-btn" data-tick="${h.id}">Mark done today</button>`;
+    }
+
+    card.innerHTML = `
+      <div class="fpb-habit-head">
+        <div class="fpb-habit-title">
+          <div class="fpb-habit-name">${escapeHtml(h.name)}</div>
+          <div class="fpb-habit-cadence">${escapeHtml(cadenceText)}</div>
+        </div>
+        ${chip}
+      </div>
+      <div class="fpb-dots">${dots}</div>
+      ${goalLine}
+      ${action}
+      <div class="fpb-habit-next">${escapeHtml(nextLine)}</div>`;
+
+    const btn = card.querySelector("[data-tick]");
+    if (btn) btn.onclick = () => tickHabit(h, btn);
+    wrap.appendChild(card);
+  });
+
+  renderBadgeShelf(habits);
+}
+
+function renderBadgeShelf(habits) {
+  const shelf = $("#badgeGrid");
+  shelf.innerHTML = "";
+  const earned = [];
+  habits.forEach((h) => {
+    const best = streakFor(h, true).best;
+    badgeLadder(h).forEach((m) => {
+      if (best >= m) earned.push({ habit: h, milestone: m });
+    });
+  });
+
+  // Show what's coming next so the shelf isn't bare early on.
+  const upcoming = [];
+  habits.forEach((h) => {
+    const best = streakFor(h, true).best;
+    const next = badgeLadder(h).find((m) => best < m);
+    if (next) upcoming.push({ habit: h, milestone: next });
+  });
+
+  if (!earned.length && !upcoming.length) { $("#badgeShelf").hidden = true; return; }
+  $("#badgeShelf").hidden = false;
+
+  earned.forEach(({ habit, milestone }) => {
+    const el = document.createElement("div");
+    el.className = "fpb-badge-item";
+    el.innerHTML = `<div class="fpb-badge-medal">🔥</div><span>${milestone} ${habit.cadence === "weekly" ? "wk" : "day"}</span><span class="fpb-badge-sub">${escapeHtml(habit.name)}</span>`;
+    shelf.appendChild(el);
+  });
+  upcoming.slice(0, 3).forEach(({ habit, milestone }) => {
+    const el = document.createElement("div");
+    el.className = "fpb-badge-item locked";
+    el.innerHTML = `<div class="fpb-badge-medal">🔒</div><span>${milestone} ${habit.cadence === "weekly" ? "wk" : "day"}</span><span class="fpb-badge-sub">${escapeHtml(habit.name)}</span>`;
+    shelf.appendChild(el);
+  });
+}
+
+async function tickHabit(habit, btn) {
+  if (submitting) return;
+  if (habitStatusToday(habit.id)) { toast("Already done today"); return; }
+  submitting = true;
+  if (btn) btn.disabled = true;
+  const isParent = role === "parent";
+  const now = new Date();
+  const ok = await safeWrite(
+    () => addDoc(entriesCol, {
+      kidId: activeKid,
+      type: "earn",
+      source: "habit",
+      habitId: habit.id,
+      name: habit.name,
+      points: habit.points,
+      date: now.toISOString(),
+      dayKey: dayKey(now),
+      status: isParent ? "approved" : "pending",
+      submittedBy: isParent ? "parent" : "kid",
+    }),
+    "Couldn't save that"
+  );
+  if (ok) toast(isParent ? `${habit.name} — done!` : `Ticked: ${habit.name} — waiting for approval`);
+  submitting = false;
+  if (btn) btn.disabled = false;
+}
+
+/**
+ * Awards milestone bonuses. Uses a deterministic document id per
+ * kid+habit+milestone, so repeated runs (or two devices at once) can never
+ * create a duplicate. Driven by approved ticks only.
+ */
+async function ensureBadges() {
+  if (!family || !entriesLoaded) return;
+  for (const h of family.habits || []) {
+    const best = streakFor(h, true).best;
+    const bonusTable = BADGE_BONUS[h.cadence === "weekly" ? "weekly" : "daily"];
+    for (const m of badgeLadder(h)) {
+      if (best < m) continue;
+      const id = `badge_${h.kidId}_${h.id}_${m}`;
+      if (entries.some((e) => e.id === id)) continue;
+      const bonus = bonusTable[m] || 0;
+      if (!bonus) continue;
+      try {
+        await setDoc(doc(db, "families", FAMILY_ID, "entries", id), {
+          kidId: h.kidId,
+          type: "earn",
+          source: "badge",
+          habitId: h.id,
+          name: `${m}-${h.cadence === "weekly" ? "week" : "day"} badge — ${h.name}`,
+          points: bonus,
+          date: new Date().toISOString(),
+          dayKey: dayKey(new Date()),
+          status: "approved",
+          submittedBy: "system",
+        });
+        toast(`Badge unlocked: ${m} ${h.cadence === "weekly" ? "weeks" : "days"} of ${h.name}! +${bonus} pts`);
+      } catch (err) { console.error(err); }
+    }
+  }
+}
+
+function weekKeyOf(d) {
+  return dayKey(startOfWeek(d));
+}
+
+/** Weeks from a habit's first approved tick through to the current week. */
+function habitWeeks(habitId) {
+  const days = [...habitTickDays(habitId, true)].sort();
+  if (!days.length) return [];
+  const out = [];
+  const thisWeek = startOfWeek(new Date());
+  for (let ws = startOfWeek(dayFromKey(days[0])); ws <= thisWeek; ws = addDays(ws, 7)) {
+    out.push(new Date(ws));
+  }
+  return out;
+}
+
+function ticksInWeek(habitId, weekStart) {
+  const we = endOfWeek(weekStart);
+  return [...habitTickDays(habitId, true)].filter((k) => {
+    const d = dayFromKey(k);
+    return d >= weekStart && d <= we;
+  }).length;
+}
+
+/** How many ticks a habit needs in one week to earn its completion bonus.
+ *  Daily habits require a perfect week; weekly ones require their target. */
+function weeklyGoal(habit) {
+  return habit.cadence === "weekly" ? (habit.target || 3) : 7;
+}
+
+/**
+ * Pays the per-week completion bonus every week the goal is met — not just at
+ * milestones. Awarded as soon as the goal is hit, even mid-week. Removed again
+ * if an approval is later withdrawn and the week no longer qualifies.
+ */
+async function ensureWeeklyBonuses() {
+  if (!family || !entriesLoaded) return;
+  for (const h of family.habits || []) {
+    const bonus = Number(h.bonus) || 0;
+    const goal = weeklyGoal(h);
+    for (const ws of habitWeeks(h.id)) {
+      const id = `wbonus_${h.kidId}_${h.id}_${weekKeyOf(ws)}`;
+      const existing = entries.find((e) => e.id === id);
+      const met = bonus > 0 && ticksInWeek(h.id, ws) >= goal;
+
+      if (met && !existing) {
+        try {
+          await setDoc(doc(db, "families", FAMILY_ID, "entries", id), {
+            kidId: h.kidId,
+            type: "earn",
+            source: "bonus",
+            habitId: h.id,
+            name: `Weekly goal — ${h.name}`,
+            points: bonus,
+            date: new Date().toISOString(),
+            dayKey: dayKey(new Date()),
+            weekKey: weekKeyOf(ws),
+            status: "approved",
+            submittedBy: "system",
+          });
+          if (weekKeyOf(ws) === weekKeyOf(new Date())) {
+            toast(`Weekly goal hit: ${h.name}! +${bonus} pts`);
+          }
+        } catch (err) { console.error(err); }
+      } else if (!met && existing) {
+        // An approval was pulled back, so the week no longer qualifies.
+        try {
+          await deleteDoc(doc(db, "families", FAMILY_ID, "entries", id));
+        } catch (err) { console.error(err); }
+      } else if (met && existing && Number(existing.points) !== bonus) {
+        // Bonus value was edited in Settings — bring the current week into line.
+        if (weekKeyOf(ws) === weekKeyOf(new Date())) {
+          try {
+            await updateDoc(doc(db, "families", FAMILY_ID, "entries", id), { points: bonus });
+          } catch (err) { console.error(err); }
+        }
+      }
+    }
+  }
+}
+
 /* ---------------- history ---------------- */
 
 function renderHistory() {
@@ -672,7 +1124,7 @@ function renderApprovals() {
       <div class="fpb-history-main">
         <span class="fpb-history-dot pending"></span>
         <div>
-          <div class="fpb-history-name">${escapeHtml(e.name)}</div>
+          <div class="fpb-history-name">${escapeHtml(e.name)}${e.source === "habit" ? '<span class="fpb-tag habit">HABIT</span>' : ""}</div>
           <div class="fpb-history-sub">${escapeHtml(kid?.name || "Unknown")} · ${e.type === "earn" ? "+" : "−"}${e.points} pts · ${fmtDate(e.date)}</div>
           ${wouldOverdraw ? '<div class="fpb-warn-row">⚠ This would put them below zero</div>' : ""}
         </div>
@@ -705,99 +1157,189 @@ function renderApprovalBadge() {
   badge.hidden = n === 0;
 }
 
-/* ---------------- trends ---------------- */
+/* ---------------- analytics ---------------- */
 
-function weeksBack(n) {
-  const weeks = [];
-  const cursor = startOfWeek(new Date());
-  for (let i = 0; i < n; i++) {
-    const start = new Date(cursor);
-    weeks.unshift({ start, end: endOfWeek(start) });
-    cursor.setDate(cursor.getDate() - 7);
+let analyticsPeriod = localStorage.getItem("fpb_period") || "month";
+
+function periodBuckets(period) {
+  const out = [];
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  if (period === "week") {
+    for (let i = 6; i >= 0; i--) {
+      const d = addDays(today, -i);
+      out.push({ start: d, end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999),
+                 label: ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][d.getDay()] });
+    }
+  } else if (period === "month") {
+    let ws = startOfWeek(today);
+    const weeks = [];
+    for (let i = 0; i < 5; i++) { weeks.unshift(new Date(ws)); ws = addDays(ws, -7); }
+    weeks.forEach((w) => out.push({ start: w, end: endOfWeek(w), label: fmtDate(w) }));
+  } else {
+    for (let i = 11; i >= 0; i--) {
+      const st = new Date(today.getFullYear(), today.getMonth() - i, 1);
+      const en = new Date(today.getFullYear(), today.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      out.push({ start: st, end: en, label: st.toLocaleDateString(undefined, { month: "short" }) });
+    }
   }
-  return weeks;
+  return out;
+}
+
+function periodRange(period) {
+  const b = periodBuckets(period);
+  return { start: b[0].start, end: b[b.length - 1].end };
+}
+
+/** Approved, non-redemption entries for the active child within a range. */
+function earnedIn(start, end, kidId = activeKid) {
+  return entries.filter((e) => {
+    if (e.kidId !== kidId || e.status !== "approved" || e.type !== "earn") return false;
+    const d = entryDate(e);
+    return d >= start && d <= end;
+  });
+}
+
+function isHabitish(e) {
+  return e.source === "habit" || e.source === "badge" || e.source === "bonus";
 }
 
 function renderTrends() {
-  const weeks = weeksBack(8);
+  $all("#periodRow .fpb-size-btn").forEach((b) => b.classList.toggle("active", b.dataset.period === analyticsPeriod));
+
+  const buckets = periodBuckets(analyticsPeriod);
   const kid = (family?.kids || []).find((k) => k.id === activeKid);
   const accent = kid?.accent || "#D4A039";
+  const labels = buckets.map((b) => b.label);
 
-  const inWeek = (e, w) => { const d = entryDate(e); return d >= w.start && d <= w.end; };
-  const mine = entries.filter((e) => e.kidId === activeKid && e.status === "approved");
-  const totals = weeks.map((w) =>
-    mine.filter((e) => e.type === "earn" && inWeek(e, w)).reduce((s, e) => s + e.points, 0)
-  );
-  const labels = weeks.map((w) => fmtDate(w.start));
+  const habitData = buckets.map((b) => earnedIn(b.start, b.end).filter(isHabitish).reduce((s, e) => s + e.points, 0));
+  const otherData = buckets.map((b) => earnedIn(b.start, b.end).filter((e) => !isHabitish(e)).reduce((s, e) => s + e.points, 0));
 
-  // Chart.js loads from a CDN — degrade gracefully rather than throwing if it's blocked.
   if (typeof Chart === "undefined") {
     $("#trendChart").hidden = true;
     $("#chartFallback").hidden = false;
   } else {
     $("#trendChart").hidden = false;
     $("#chartFallback").hidden = true;
-    // Only rebuild when the data actually changed, otherwise it flickers on every sync.
-    const key = JSON.stringify([activeKid, accent, totals, labels]);
+    const key = JSON.stringify([activeKid, accent, analyticsPeriod, habitData, otherData, labels]);
     if (key !== lastChartKey) {
       lastChartKey = key;
       if (chartInstance) chartInstance.destroy();
       chartInstance = new Chart($("#trendChart").getContext("2d"), {
-        type: "line",
+        type: "bar",
         data: {
           labels,
-          datasets: [{
-            label: kid?.name || "Points",
-            data: totals,
-            borderColor: accent,
-            backgroundColor: accent + "33",
-            tension: 0.35,
-            fill: true,
-            pointRadius: 3,
-            pointBackgroundColor: accent,
-          }],
+          datasets: [
+            { label: "Habits", data: habitData, backgroundColor: accent, borderRadius: 4, stack: "s" },
+            { label: "Chores & activities", data: otherData, backgroundColor: "#7CA8C9", borderRadius: 4, stack: "s" },
+          ],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           animation: { duration: 300 },
           plugins: {
-            legend: { display: false },
-            tooltip: { callbacks: { title: (i) => `Week of ${i[0].label}`, label: (c) => `${c.parsed.y} pts` } },
+            legend: { display: true, position: "bottom", labels: { color: "#9AA6C0", boxWidth: 12, font: { size: 11 } } },
+            tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y} pts` } },
           },
           scales: {
-            x: { ticks: { color: "#9AA6C0", maxRotation: 0, autoSkipPadding: 12 }, grid: { color: "rgba(255,255,255,0.06)" } },
-            y: { beginAtZero: true, ticks: { color: "#9AA6C0", precision: 0 }, grid: { color: "rgba(255,255,255,0.06)" } },
+            x: { stacked: true, ticks: { color: "#9AA6C0", maxRotation: 0, autoSkipPadding: 8 }, grid: { display: false } },
+            y: { stacked: true, beginAtZero: true, ticks: { color: "#9AA6C0", precision: 0 }, grid: { color: "rgba(255,255,255,0.06)" } },
           },
         },
       });
     }
   }
 
-  const listEl = $("#weekList");
-  listEl.innerHTML = "";
-  const thisWeekStart = startOfWeek(new Date()).getTime();
-  [...weeks].reverse().forEach((w) => {
-    const items = mine.filter((e) => inWeek(e, w));
-    const earned = items.filter((e) => e.type === "earn").reduce((s, e) => s + e.points, 0);
-    const spent = items.filter((e) => e.type === "redeem").reduce((s, e) => s + e.points, 0);
-    const card = document.createElement("div");
-    card.className = "fpb-week-card" + (w.start.getTime() === thisWeekStart ? " current" : "");
-    const rows = items.length
-      ? items.map((e) =>
-          `<div class="fpb-week-item"><span>${escapeHtml(e.name)}</span><span>${e.type === "earn" ? "+" : "−"}${e.points}</span></div>`
-        ).join("")
-      : '<div class="fpb-week-item"><span>Nothing logged</span></div>';
-    card.innerHTML = `
-      <div class="fpb-week-head">
-        <span>${fmtDate(w.start)} – ${fmtDate(w.end)}${w.start.getTime() === thisWeekStart ? " · this week" : ""}</span>
-        <span class="fpb-week-total">${earned} pts</span>
-      </div>
-      ${spent ? `<div class="fpb-week-item" style="margin-top:6px;"><span>Redeemed this week</span><span>−${spent}</span></div>` : ""}
-      <div class="fpb-week-items">${rows}</div>`;
-    listEl.appendChild(card);
+  renderAnalyticsSummary();
+  renderCategoryBreakdown();
+  renderConsistency();
+}
+
+function renderAnalyticsSummary() {
+  const { start, end } = periodRange(analyticsPeriod);
+  const earned = earnedIn(start, end).reduce((s, e) => s + e.points, 0);
+  const spent = entries
+    .filter((e) => e.kidId === activeKid && e.status === "approved" && e.type === "redeem" &&
+                   entryDate(e) >= start && entryDate(e) <= end)
+    .reduce((s, e) => s + e.points, 0);
+  const label = { week: "in the last 7 days", month: "in the last 5 weeks", year: "in the last 12 months" }[analyticsPeriod];
+  $("#anEarned").textContent = earned;
+  $("#anSpent").textContent = spent;
+  $("#anNet").textContent = earned - spent;
+  $("#anPeriodLabel").textContent = label;
+}
+
+function renderCategoryBreakdown() {
+  const { start, end } = periodRange(analyticsPeriod);
+  const rows = new Map();
+  earnedIn(start, end).forEach((e) => {
+    let cat;
+    if (e.source === "habit") cat = "Habits";
+    else if (e.source === "badge" || e.source === "bonus") cat = "Streak bonuses";
+    else {
+      const act = (family?.activities || []).find((a) => a.name === e.name);
+      cat = (act?.category || "").trim() || "Other";
+    }
+    rows.set(cat, (rows.get(cat) || 0) + e.points);
+  });
+
+  const box = $("#catBreakdown");
+  box.innerHTML = "";
+  if (!rows.size) {
+    box.innerHTML = '<div class="fpb-empty">Nothing logged in this period yet.</div>';
+    return;
+  }
+  const sorted = [...rows.entries()].sort((a, b) => b[1] - a[1]);
+  const max = sorted[0][1] || 1;
+  sorted.forEach(([cat, pts]) => {
+    const row = document.createElement("div");
+    row.className = "fpb-an-row";
+    row.innerHTML = `
+      <div class="fpb-an-row-head"><span>${escapeHtml(cat)}</span><span class="fpb-an-pts">${pts}</span></div>
+      <div class="fpb-an-bar"><span style="width:${Math.round((pts / max) * 100)}%"></span></div>`;
+    box.appendChild(row);
   });
 }
+
+/** How often each habit actually happened, against how often it was meant to. */
+function renderConsistency() {
+  const box = $("#consistency");
+  box.innerHTML = "";
+  const habits = habitsForKid(activeKid);
+  if (!habits.length) { $("#consistencyWrap").hidden = true; return; }
+  $("#consistencyWrap").hidden = false;
+
+  const { start, end } = periodRange(analyticsPeriod);
+  const days = Math.round((end - start) / 86400000) + 1;
+  const weeks = Math.max(1, days / 7);
+
+  habits.forEach((h) => {
+    const ticks = [...habitTickDays(h.id, true)].filter((k) => {
+      const d = dayFromKey(k);
+      return d >= start && d <= end;
+    }).length;
+    const expected = h.cadence === "weekly" ? Math.round(weeks * (h.target || 3)) : days;
+    const pct = expected ? Math.min(100, Math.round((ticks / expected) * 100)) : 0;
+    const row = document.createElement("div");
+    row.className = "fpb-an-row";
+    row.innerHTML = `
+      <div class="fpb-an-row-head"><span>${escapeHtml(h.name)}</span><span class="fpb-an-pts">${pct}%</span></div>
+      <div class="fpb-an-bar"><span class="${pct >= 80 ? "good" : pct >= 50 ? "mid" : "low"}" style="width:${pct}%"></span></div>
+      <div class="fpb-an-sub">${ticks} of about ${expected} times</div>`;
+    box.appendChild(row);
+  });
+}
+
+$all("#periodRow .fpb-size-btn").forEach((btn) => {
+  btn.onclick = () => {
+    analyticsPeriod = btn.dataset.period;
+    localStorage.setItem("fpb_period", analyticsPeriod);
+    lastChartKey = "";
+    renderTrends();
+  };
+});
 
 /* ---------------- settings ---------------- */
 
@@ -823,7 +1365,131 @@ function renderSettings() {
   renderStabList("activities", family.activities, "points");
   renderStabList("rewards", family.rewards, "cost");
   renderKidsStab();
+  renderHabitsStab();
   renderDisplayStab();
+}
+
+function renderHabitsStab() {
+  const panel = $("#stab-habits");
+  if (document.activeElement?.closest("#stab-habits")) return;
+  panel.innerHTML = "";
+
+  const kids = family.kids || [];
+  if (!kids.length) {
+    panel.innerHTML = '<p class="fpb-hint">Add a child first, on the Kids tab.</p>';
+    return;
+  }
+
+  const hint = document.createElement("p");
+  hint.className = "fpb-hint";
+  hint.textContent = "Each child has their own habits. The bonus is paid every week the goal is met — a full 7 days for daily habits, or the target for weekly ones. Set it to 0 to turn it off.";
+  panel.appendChild(hint);
+
+  kids.forEach((kid) => {
+    const head = document.createElement("div");
+    head.className = "fpb-group-head";
+    head.textContent = kid.name;
+    panel.appendChild(head);
+
+    const list = habitsForKid(kid.id);
+    const ul = document.createElement("ul");
+    ul.className = "fpb-modal-list";
+    if (!list.length) {
+      const li = document.createElement("li");
+      li.innerHTML = '<span class="fpb-modal-list-name" style="color:var(--text-dim)">No habits yet</span>';
+      ul.appendChild(li);
+    }
+    list.forEach((h) => {
+      const li = document.createElement("li");
+      const desc = h.cadence === "weekly" ? `${h.target}×/wk · ${h.points} pts` : `daily · ${h.points} pts`;
+      li.innerHTML = `<span class="fpb-modal-list-name">${escapeHtml(h.name)}</span>`;
+      const right = document.createElement("span");
+      right.className = "fpb-modal-list-right";
+      const tag = document.createElement("span");
+      tag.className = "fpb-unit";
+      tag.textContent = desc;
+
+      // Inline bonus editor
+      const bonusIn = document.createElement("input");
+      bonusIn.type = "number"; bonusIn.min = "0";
+      bonusIn.className = "fpb-inline-num";
+      bonusIn.value = Number(h.bonus) || 0;
+      bonusIn.title = "Weekly goal bonus";
+      bonusIn.setAttribute("aria-label", `Weekly bonus for ${h.name}`);
+      const commitBonus = async () => {
+        const v = Number(bonusIn.value);
+        if (!Number.isFinite(v) || v < 0) { bonusIn.value = Number(h.bonus) || 0; return; }
+        if (v === (Number(h.bonus) || 0)) return;
+        const next = (family.habits || []).map((x) => (x.id === h.id ? { ...x, bonus: v } : x));
+        const ok = await safeWrite(() => updateDoc(familyRef, { habits: next }), "Couldn't save");
+        if (ok) toast(v > 0 ? `${h.name} weekly bonus set to ${v} pts` : `${h.name} weekly bonus turned off`);
+      };
+      bonusIn.onblur = commitBonus;
+      bonusIn.onkeydown = (e) => { if (e.key === "Enter") bonusIn.blur(); };
+      const bonusLbl = document.createElement("span");
+      bonusLbl.className = "fpb-unit";
+      bonusLbl.textContent = "bonus";
+
+      const rm = document.createElement("button");
+      rm.className = "fpb-icon-btn small";
+      rm.textContent = "🗑";
+      rm.setAttribute("aria-label", `Remove ${h.name}`);
+      rm.onclick = async () => {
+        const yes = await confirmDialog("Remove this habit?", `"${h.name}" will be removed. Ticks already logged stay in the history.`, "Remove");
+        if (!yes) return;
+        const next = (family.habits || []).filter((x) => x.id !== h.id);
+        await safeWrite(() => updateDoc(familyRef, { habits: next }), "Couldn't remove");
+      };
+      right.append(tag, bonusIn, bonusLbl, rm);
+      li.appendChild(right);
+      ul.appendChild(li);
+    });
+    panel.appendChild(ul);
+
+    const row = document.createElement("div");
+    row.className = "fpb-habit-add";
+    row.innerHTML = `
+      <input placeholder="New habit for ${escapeHtml(kid.name)}" data-hname maxlength="60" />
+      <div class="fpb-habit-add-row">
+        <select data-hcadence>
+          <option value="daily">Every day</option>
+          <option value="weekly">Times a week</option>
+        </select>
+        <input type="number" min="1" max="7" value="4" class="fpb-modal-add-num" data-htarget hidden />
+        <input type="number" min="1" value="10" class="fpb-modal-add-num" data-hpoints aria-label="Points per tick" />
+        <span class="fpb-unit">pts</span>
+        <input type="number" min="0" value="15" class="fpb-modal-add-num" data-hbonus aria-label="Weekly goal bonus" />
+        <span class="fpb-unit">bonus</span>
+        <button class="fpb-icon-btn add" data-hadd aria-label="Add habit">+</button>
+      </div>`;
+    panel.appendChild(row);
+
+    const cad = row.querySelector("[data-hcadence]");
+    const tgt = row.querySelector("[data-htarget]");
+    cad.onchange = () => { tgt.hidden = cad.value !== "weekly"; };
+
+    row.querySelector("[data-hadd]").onclick = async () => {
+      const name = row.querySelector("[data-hname]").value.trim();
+      const points = Number(row.querySelector("[data-hpoints]").value);
+      const cadence = cad.value;
+      const target = Number(tgt.value);
+      if (!name) { toast("Give the habit a name first"); return; }
+      if (!Number.isFinite(points) || points <= 0) { toast("Enter a point value above zero"); return; }
+      if (cadence === "weekly" && (!Number.isFinite(target) || target < 1 || target > 7)) {
+        toast("Weekly target must be between 1 and 7"); return;
+      }
+      if (habitsForKid(kid.id).some((h) => h.name.toLowerCase() === name.toLowerCase())) {
+        toast(`${kid.name} already has a habit called that`); return;
+      }
+      row.querySelector("[data-hname]").value = "";
+      const bonusVal = Number(row.querySelector("[data-hbonus]").value);
+      const entry = { id: uidLocal(), kidId: kid.id, name, points, cadence, bonus: Number.isFinite(bonusVal) && bonusVal > 0 ? bonusVal : 0 };
+      if (cadence === "weekly") entry.target = target;
+      const next = [...(family.habits || []), entry];
+      const ok = await safeWrite(() => updateDoc(familyRef, { habits: next }), "Couldn't add habit");
+      if (ok) toast(`Added ${name} for ${kid.name}`);
+    };
+  });
 }
 
 function renderDisplayStab() {
@@ -860,6 +1526,7 @@ function renderStabList(key, list, valueKey) {
   // Preserve whatever the parent had half-typed before a background sync redrew this panel.
   const prevName = panel.querySelector("[data-name]")?.value || "";
   const prevVal = panel.querySelector("[data-val]")?.value || "";
+  const prevCat = panel.querySelector("[data-cat]")?.value || "";
   panel.innerHTML = "";
 
   const ul = document.createElement("ul");
@@ -869,9 +1536,22 @@ function renderStabList(key, list, valueKey) {
     li.innerHTML = `<span class="fpb-modal-list-name" style="color:var(--text-dim)">No ${key} yet — add one below.</span>`;
     ul.appendChild(li);
   }
+  if (key === "activities") {
+    const dl = $("#fpb-cats");
+    if (dl) {
+      const cats = [...new Set(list.map((i) => (i.category || "").trim()).filter(Boolean))];
+      if (!cats.includes("Chores")) cats.unshift("Chores");
+      if (!cats.includes("Extra effort")) cats.push("Extra effort");
+      dl.innerHTML = cats.map((c) => `<option value="${escapeHtml(c)}"></option>`).join("");
+    }
+  }
+
   list.forEach((item) => {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="fpb-modal-list-name">${escapeHtml(item.name)}</span>`;
+    const catTag = key === "activities" && item.category
+      ? `<span class="fpb-cat-tag">${escapeHtml(item.category)}</span>`
+      : "";
+    li.innerHTML = `<span class="fpb-modal-list-name">${escapeHtml(item.name)}${catTag}</span>`;
     const right = document.createElement("span");
     right.className = "fpb-modal-list-right";
 
@@ -920,16 +1600,22 @@ function renderStabList(key, list, valueKey) {
 
   const addRow = document.createElement("div");
   addRow.className = "fpb-modal-add";
+  const catField = key === "activities"
+    ? `<input placeholder="Group" list="fpb-cats" data-cat maxlength="24" class="fpb-cat-input" />`
+    : "";
   addRow.innerHTML =
     `<input placeholder="New ${label}" data-name maxlength="60" />` +
+    catField +
     `<input placeholder="pts" type="number" min="1" class="fpb-modal-add-num" data-val />` +
     `<button class="fpb-icon-btn add" data-add aria-label="Add ${label}">+</button>`;
   panel.appendChild(addRow);
 
   const nameEl = addRow.querySelector("[data-name]");
   const valEl = addRow.querySelector("[data-val]");
+  const catEl = addRow.querySelector("[data-cat]");
   nameEl.value = prevName;
   valEl.value = prevVal;
+  if (catEl) catEl.value = prevCat;
 
   const doAdd = async () => {
     const name = nameEl.value.trim();
@@ -943,7 +1629,12 @@ function renderStabList(key, list, valueKey) {
     // Clear immediately so a fast second add doesn't duplicate the first.
     nameEl.value = "";
     valEl.value = "";
-    const next = [...list, { id: uidLocal(), name, [valueKey]: val }];
+    const item = { id: uidLocal(), name, [valueKey]: val };
+    if (catEl) {
+      // Reuse the last group so a run of chores doesn't need retyping.
+      item.category = catEl.value.trim() || "Other";
+    }
+    const next = [...list, item];
     const ok = await safeWrite(() => updateDoc(familyRef, { [key]: next }), "Couldn't add that");
     if (ok) toast(`Added ${name}`);
     nameEl.focus();

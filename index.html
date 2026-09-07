@@ -9,7 +9,7 @@
 <!-- Critical rule inlined: guarantees hidden elements stay hidden even if style.css
      is stale, cached, or fails to load. Do not remove. -->
 <style>[hidden] { display: none !important; }</style>
-<link rel="stylesheet" href="style.css?v=4" />
+<link rel="stylesheet" href="style.css?v=6" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
@@ -77,25 +77,66 @@
 
   <nav class="fpb-tabs" id="tabs">
     <button class="fpb-tab active" data-tab="earn">Log</button>
+    <button class="fpb-tab" data-tab="habits">Habits</button>
     <button class="fpb-tab" data-tab="redeem">Rewards</button>
     <button class="fpb-tab" data-tab="history">History</button>
-    <button class="fpb-tab" data-tab="trends">Trends</button>
+    <button class="fpb-tab" data-tab="trends">Insights</button>
     <button class="fpb-tab" data-tab="approvals" id="approvalsTabBtn" hidden>Approvals <span id="pendingCount" class="fpb-badge" hidden>0</span></button>
   </nav>
 
   <main class="fpb-main">
     <div id="view-earn" class="fpb-view"><div id="earnGrid" class="fpb-grid"></div></div>
+    <div id="view-habits" class="fpb-view" hidden>
+      <div id="habitSummary" class="fpb-habit-summary" hidden>
+        <div class="fpb-hsum-card">
+          <span class="fpb-hsum-label">Done today</span>
+          <span id="habitDone" class="fpb-hsum-value">0 of 0</span>
+        </div>
+        <div class="fpb-hsum-card hot">
+          <span id="habitStreakLabel" class="fpb-hsum-label">Best run</span>
+          <span id="habitStreakBig" class="fpb-hsum-value">&mdash;</span>
+        </div>
+      </div>
+      <div id="habitList" class="fpb-habit-list"></div>
+      <div id="badgeShelf" class="fpb-badge-shelf" hidden>
+        <div class="fpb-badge-title">Badges</div>
+        <div id="badgeGrid" class="fpb-badge-grid"></div>
+      </div>
+    </div>
+
     <div id="view-redeem" class="fpb-view" hidden><div id="redeemGrid" class="fpb-grid"></div></div>
     <div id="view-history" class="fpb-view" hidden><ul id="historyList" class="fpb-history"></ul></div>
 
     <div id="view-trends" class="fpb-view" hidden>
+      <div id="periodRow" class="fpb-size-row">
+        <button class="fpb-size-btn" data-period="week">Week</button>
+        <button class="fpb-size-btn" data-period="month">Month</button>
+        <button class="fpb-size-btn" data-period="year">Year</button>
+      </div>
+
+      <div class="fpb-an-cards">
+        <div class="fpb-an-card"><span class="fpb-an-label">Earned</span><span id="anEarned" class="fpb-an-value">0</span></div>
+        <div class="fpb-an-card"><span class="fpb-an-label">Spent</span><span id="anSpent" class="fpb-an-value blue">0</span></div>
+        <div class="fpb-an-card"><span class="fpb-an-label">Net</span><span id="anNet" class="fpb-an-value">0</span></div>
+      </div>
+      <div id="anPeriodLabel" class="fpb-an-period"></div>
+
       <div class="fpb-chart-wrap">
         <div class="fpb-chart-box"><canvas id="trendChart"></canvas></div>
         <div id="chartFallback" class="fpb-chart-fallback" hidden>
-          Graph unavailable — the chart library didn't load. The weekly breakdown below still works.
+          Graph unavailable — the chart library didn't load. The breakdowns below still work.
         </div>
       </div>
-      <div id="weekList" class="fpb-weeklist"></div>
+
+      <div class="fpb-an-section">
+        <div class="fpb-an-title">Where the points came from</div>
+        <div id="catBreakdown"></div>
+      </div>
+
+      <div id="consistencyWrap" class="fpb-an-section" hidden>
+        <div class="fpb-an-title">Habit consistency</div>
+        <div id="consistency"></div>
+      </div>
     </div>
 
     <div id="view-approvals" class="fpb-view" hidden><ul id="approvalsList" class="fpb-history"></ul></div>
@@ -111,6 +152,7 @@
         <button class="active" data-stab="activities">Activities</button>
         <button data-stab="rewards">Rewards</button>
         <button data-stab="kids">Kids</button>
+        <button data-stab="habits">Habits</button>
         <button data-stab="display">Display</button>
         <button data-stab="pin">PIN</button>
       </div>
@@ -118,6 +160,7 @@
       <div id="stab-activities" class="fpb-stab-panel"></div>
       <div id="stab-rewards" class="fpb-stab-panel" hidden></div>
       <div id="stab-kids" class="fpb-stab-panel" hidden></div>
+      <div id="stab-habits" class="fpb-stab-panel" hidden></div>
 
       <div id="stab-display" class="fpb-stab-panel" hidden>
         <span class="fpb-field-label">TEXT SIZE</span>
@@ -155,6 +198,8 @@
 
 </div>
 
-<script type="module" src="app.js?v=4"></script>
+<datalist id="fpb-cats"></datalist>
+
+<script type="module" src="app.js?v=6"></script>
 </body>
 </html>
