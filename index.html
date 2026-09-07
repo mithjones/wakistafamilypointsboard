@@ -9,7 +9,7 @@
 <!-- Critical rule inlined: guarantees hidden elements stay hidden even if style.css
      is stale, cached, or fails to load. Do not remove. -->
 <style>[hidden] { display: none !important; }</style>
-<link rel="stylesheet" href="style.css?v=6" />
+<link rel="stylesheet" href="style.css?v=7" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 </head>
 <body>
@@ -60,6 +60,8 @@
       <div id="kidtabs" class="fpb-kidtabs"></div>
       <div class="fpb-header-actions">
         <span id="roleBadge" class="fpb-role-badge"></span>
+        <button id="profileBtn" class="fpb-avatar-btn" title="My profile" aria-label="My profile"></button>
+        <button id="msgBtn" class="fpb-icon-btn" title="Messages" aria-label="Messages">✉<span id="msgBadge" class="fpb-badge" hidden>0</span></button>
         <button id="switchUserBtn" class="fpb-icon-btn" title="Switch user" aria-label="Switch user">⇄</button>
         <button id="settingsBtn" class="fpb-icon-btn" title="Settings" aria-label="Settings" hidden>⚙</button>
       </div>
@@ -73,6 +75,7 @@
     <div id="scoreboard" class="fpb-scoreboard" aria-live="polite"></div>
     <div class="fpb-hero-sub"><span aria-hidden="true">🏆</span><span id="weekPoints">0 pts earned this week</span></div>
     <div id="heroPending" class="fpb-hero-pending" hidden></div>
+    <div id="heroMotto" class="fpb-hero-motto" hidden></div>
   </section>
 
   <nav class="fpb-tabs" id="tabs">
@@ -144,6 +147,49 @@
 
   <div id="toast" class="fpb-toast" role="status" hidden></div>
 
+  <!-- Profile personalisation -->
+  <div id="profileModal" class="fpb-modal-backdrop" hidden>
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="My profile">
+      <div class="fpb-modal-head"><span id="profileTitle">My profile</span><button id="profileClose" class="fpb-icon-btn" aria-label="Close">✕</button></div>
+
+      <div class="fpb-profile-preview">
+        <div id="avatarPreview" class="fpb-avatar-lg"></div>
+        <div class="fpb-profile-actions">
+          <label class="fpb-file-btn">
+            Choose a photo
+            <input id="avatarInput" type="file" accept="image/*" hidden />
+          </label>
+          <button id="avatarClear" class="fpb-textbtn">Remove photo</button>
+        </div>
+      </div>
+      <p class="fpb-hint">Photos are shrunk down on your device before saving, so they stay small and load fast.</p>
+
+      <span class="fpb-field-label">OR PICK A CHARACTER</span>
+      <div id="emojiRow" class="fpb-emoji-row"></div>
+
+      <span class="fpb-field-label">MY COLOUR</span>
+      <div id="colourRow" class="fpb-colour-row"></div>
+
+      <span class="fpb-field-label">MY MOTTO</span>
+      <input id="mottoInput" class="fpb-text-input" type="text" maxlength="40" placeholder="Something to spur you on" />
+      <button id="profileSave" class="fpb-btn-wide">Save my profile</button>
+    </div>
+  </div>
+
+  <!-- Messages -->
+  <div id="msgModal" class="fpb-modal-backdrop" hidden>
+    <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="Messages">
+      <div class="fpb-modal-head"><span id="msgTitle">Messages</span><button id="msgClose" class="fpb-icon-btn" aria-label="Close">✕</button></div>
+      <div id="msgKidRow" class="fpb-msg-kidrow" hidden></div>
+      <div id="msgThread" class="fpb-msg-thread"></div>
+      <div id="msgQuick" class="fpb-msg-quick"></div>
+      <div class="fpb-modal-add">
+        <input id="msgInput" placeholder="Write something…" maxlength="200" />
+        <button id="msgSend" class="fpb-icon-btn add" aria-label="Send message">➤</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Settings panel -->
   <div id="settingsModal" class="fpb-modal-backdrop" hidden>
     <div class="fpb-modal" role="dialog" aria-modal="true" aria-label="Settings">
@@ -200,6 +246,6 @@
 
 <datalist id="fpb-cats"></datalist>
 
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

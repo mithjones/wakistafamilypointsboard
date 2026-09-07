@@ -342,6 +342,8 @@ onAuthStateChanged(auth, async (user) => {
     banner("");
     listenFamily();
     listenEntries();
+    listenProfiles();
+    listenMessages();
   } catch (err) {
     console.error(err);
     banner("Can't read your data. Check the Firestore security rules.");
@@ -543,6 +545,23 @@ function renderAll() {
   renderCurrentView();
   renderApprovalBadge();
   renderSidePanels();
+  renderHeaderProfile();
+  renderMsgBadge();
+}
+
+function renderHeaderProfile() {
+  const kid = (family?.kids || []).find((k) => k.id === activeKid);
+  paintAvatar($("#profileBtn"), kid);
+  // A child personalises their own page; a parent can help from their device.
+  $("#profileBtn").hidden = !kid;
+  $("#profileBtn").title = role === "parent" ? `${kid?.name || ""}'s profile` : "My profile";
+
+  const motto = profileOf(activeKid).motto || "";
+  const el = $("#heroMotto");
+  if (el) {
+    el.textContent = motto ? `“${motto}”` : "";
+    el.hidden = !motto;
+  }
 }
 
 function renderRoleBadge() {
@@ -562,8 +581,9 @@ function renderKidTabs() {
   visible.forEach((k) => {
     const b = document.createElement("button");
     b.className = "fpb-kidtab" + (k.id === activeKid ? " active" : "") + (role === "kid" ? " readonly" : "");
-    b.style.setProperty("--accent", k.accent);
-    b.textContent = k.name;
+    b.style.setProperty("--accent", accentOf(k));
+    const pe = profileOf(k.id).emoji;
+    b.textContent = (pe ? pe + " " : "") + k.name;
     if (role === "parent") {
       b.onclick = () => { activeKid = k.id; renderAll(); };
     }
@@ -574,7 +594,7 @@ function renderKidTabs() {
 function renderScoreboard() {
   const kid = (family?.kids || []).find((k) => k.id === activeKid);
   const bal = activeKid ? balanceFor(activeKid) : 0;
-  const accent = kid?.accent || "#D4A039";
+  const accent = accentOf(kid);
   const box = $("#scoreboard");
   box.innerHTML = "";
 
@@ -1049,6 +1069,297 @@ async function ensureWeeklyBonuses() {
   }
 }
 
+/* ---------------- profiles & messages ---------------- */
+
+const profilesRef = doc(db, "families", FAMILY_ID, "config", "profiles");
+const messagesCol = collection(db, "families", FAMILY_ID, "messages");
+
+let profiles = {};
+let messages = [];
+let msgThreadKid = null;
+
+const EMOJI_CHOICES = ["🏀","🏊","⚡","🦖","🐱","🐶","🦊","🐼","🚀","🌟","🔥","🎸","🍕","🦄","👾","🐉","🍦","⚽"];
+
+function profileOf(kidId) {
+  return profiles[kidId] || {};
+}
+
+/** Accent comes from the child's own choice when they've made one. */
+function accentOf(kid) {
+  if (!kid) return "#D4A039";
+  return profileOf(kid.id).accent || kid.accent || "#D4A039";
+}
+
+function listenProfiles() {
+  onSnapshot(profilesRef, (snap) => {
+    profiles = snap.exists() ? (snap.data() || {}) : {};
+    renderAll();
+  }, (err) => console.error(err));
+}
+
+function listenMessages() {
+  onSnapshot(query(messagesCol, orderBy("date", "asc")), (snap) => {
+    messages = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    renderMsgBadge();
+    if (!$("#msgModal").hidden) renderThread();
+  }, (err) => console.error(err));
+}
+
+/** Paints an avatar into a target element: photo, else emoji, else initial. */
+function paintAvatar(el, kid) {
+  if (!el) return;
+  const p = profileOf(kid?.id);
+  el.innerHTML = "";
+  el.style.background = "";
+  if (p.avatar) {
+    const img = document.createElement("img");
+    img.src = p.avatar;
+    img.alt = kid?.name || "";
+    el.appendChild(img);
+  } else if (p.emoji) {
+    el.textContent = p.emoji;
+  } else {
+    el.textContent = (kid?.name || "?").charAt(0).toUpperCase();
+    el.style.background = accentOf(kid);
+  }
+}
+
+/**
+ * Shrinks a chosen photo to a square thumbnail in the browser before it ever
+ * leaves the device. Keeps Firestore documents small and avoids needing
+ * Firebase Storage (and the billing account that now comes with it).
+ */
+function compressImage(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    if (!file.type.startsWith("image/")) return reject(new Error("Not an image"));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Couldn't read that file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("Couldn't open that image"));
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = size;
+        const ctx = canvas.getContext("2d");
+        // Centre-crop to a square so faces don't get squashed.
+        const side = Math.min(img.width, img.height);
+        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, size, size);
+        let q = 0.82;
+        let out = canvas.toDataURL("image/jpeg", q);
+        while (out.length > 120000 && q > 0.4) {
+          q -= 0.12;
+          out = canvas.toDataURL("image/jpeg", q);
+        }
+        resolve(out);
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/* --- profile modal --- */
+
+let draftProfile = null;
+let draftKidId = null;
+
+function openProfile() {
+  const kid = (family?.kids || []).find((k) => k.id === activeKid);
+  if (!kid) { toast("No child selected"); return; }
+  draftKidId = kid.id;
+  draftProfile = { ...profileOf(kid.id) };
+  $("#profileTitle").textContent = role === "parent" ? `${kid.name}'s profile` : "My profile";
+  $("#mottoInput").value = draftProfile.motto || "";
+  renderProfileModal(kid);
+  $("#profileModal").hidden = false;
+}
+
+function renderProfileModal(kid) {
+  const preview = $("#avatarPreview");
+  preview.innerHTML = "";
+  preview.style.background = "";
+  if (draftProfile.avatar) {
+    const img = document.createElement("img");
+    img.src = draftProfile.avatar;
+    img.alt = "";
+    preview.appendChild(img);
+  } else if (draftProfile.emoji) {
+    preview.textContent = draftProfile.emoji;
+  } else {
+    preview.textContent = (kid?.name || "?").charAt(0).toUpperCase();
+    preview.style.background = draftProfile.accent || kid?.accent || "#D4A039";
+  }
+
+  const er = $("#emojiRow");
+  er.innerHTML = "";
+  EMOJI_CHOICES.forEach((em) => {
+    const b = document.createElement("button");
+    b.className = "fpb-emoji-btn" + (draftProfile.emoji === em && !draftProfile.avatar ? " active" : "");
+    b.textContent = em;
+    b.onclick = () => {
+      draftProfile.emoji = draftProfile.emoji === em ? "" : em;
+      if (draftProfile.emoji) draftProfile.avatar = "";
+      renderProfileModal(kid);
+    };
+    er.appendChild(b);
+  });
+
+  const cr = $("#colourRow");
+  cr.innerHTML = "";
+  PALETTE.concat(["#E56A6A", "#6FBF73", "#E5B45A"]).forEach((col) => {
+    const b = document.createElement("button");
+    b.className = "fpb-colour-btn" + ((draftProfile.accent || kid?.accent) === col ? " active" : "");
+    b.style.background = col;
+    b.setAttribute("aria-label", `Colour ${col}`);
+    b.onclick = () => { draftProfile.accent = col; renderProfileModal(kid); };
+    cr.appendChild(b);
+  });
+}
+
+$("#profileBtn").onclick = openProfile;
+$("#profileClose").onclick = () => ($("#profileModal").hidden = true);
+
+$("#avatarInput").addEventListener("change", async (e) => {
+  const file = e.target.files?.[0];
+  e.target.value = "";
+  if (!file) return;
+  if (file.size > 12 * 1024 * 1024) { toast("That photo is too big — try a smaller one", true); return; }
+  try {
+    toast("Shrinking your photo…");
+    draftProfile.avatar = await compressImage(file);
+    draftProfile.emoji = "";
+    renderProfileModal((family?.kids || []).find((k) => k.id === draftKidId));
+  } catch (err) {
+    console.error(err);
+    toast(err.message || "Couldn't use that image", true);
+  }
+});
+
+$("#avatarClear").onclick = () => {
+  draftProfile.avatar = "";
+  renderProfileModal((family?.kids || []).find((k) => k.id === draftKidId));
+};
+
+$("#profileSave").onclick = async () => {
+  if (!draftKidId) return;
+  draftProfile.motto = $("#mottoInput").value.trim();
+  const ok = await safeWrite(
+    () => setDoc(profilesRef, { [draftKidId]: draftProfile }, { merge: true }),
+    "Couldn't save your profile"
+  );
+  if (ok) { $("#profileModal").hidden = true; toast("Profile saved"); }
+};
+
+/* --- messages --- */
+
+function unreadCount() {
+  if (role === "parent") return messages.filter((m) => m.from === "kid" && !m.readByParent).length;
+  return messages.filter((m) => m.from === "parent" && m.kidId === deviceKidId && !m.readByKid).length;
+}
+
+function renderMsgBadge() {
+  const n = unreadCount();
+  const b = $("#msgBadge");
+  b.textContent = n;
+  b.hidden = n === 0;
+}
+
+function openMessages() {
+  msgThreadKid = role === "parent" ? (msgThreadKid || activeKid) : deviceKidId;
+  $("#msgTitle").textContent = role === "parent" ? "Messages" : "Message home";
+  renderQuickPicks();
+  renderThread();
+  $("#msgModal").hidden = false;
+  markRead();
+}
+
+function renderQuickPicks() {
+  const wrap = $("#msgQuick");
+  wrap.innerHTML = "";
+  const picks = role === "parent"
+    ? ["Proud of you 🎉", "Great effort today 💪", "Approved! ✅", "Let's talk tonight 💬"]
+    : ["I did it! 🎉", "Can I have a hint? 🤔", "Guess what… 👀", "Love you ❤️"];
+  picks.forEach((t) => {
+    const b = document.createElement("button");
+    b.className = "fpb-quick-btn";
+    b.textContent = t;
+    b.onclick = () => { $("#msgInput").value = t; $("#msgInput").focus(); };
+    wrap.appendChild(b);
+  });
+}
+
+function renderThread() {
+  // Parent-side child switcher
+  const kidRow = $("#msgKidRow");
+  if (role === "parent" && (family?.kids || []).length > 1) {
+    kidRow.hidden = false;
+    kidRow.innerHTML = "";
+    family.kids.forEach((k) => {
+      const b = document.createElement("button");
+      const unread = messages.filter((m) => m.kidId === k.id && m.from === "kid" && !m.readByParent).length;
+      b.className = "fpb-msg-kidbtn" + (k.id === msgThreadKid ? " active" : "");
+      b.textContent = k.name + (unread ? ` (${unread})` : "");
+      b.onclick = () => { msgThreadKid = k.id; renderThread(); markRead(); };
+      kidRow.appendChild(b);
+    });
+  } else {
+    kidRow.hidden = true;
+  }
+
+  const box = $("#msgThread");
+  box.innerHTML = "";
+  const thread = messages.filter((m) => m.kidId === msgThreadKid);
+  if (!thread.length) {
+    box.innerHTML = '<div class="fpb-empty">No messages yet — say something silly.</div>';
+    return;
+  }
+  thread.forEach((m) => {
+    const mine = (role === "parent" && m.from === "parent") || (role === "kid" && m.from === "kid");
+    const el = document.createElement("div");
+    el.className = "fpb-msg" + (mine ? " mine" : "");
+    el.innerHTML = `<div class="fpb-msg-bubble">${escapeHtml(m.text)}</div><div class="fpb-msg-meta">${escapeHtml(m.fromName || "")} · ${fmtDate(m.date)}</div>`;
+    box.appendChild(el);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+async function markRead() {
+  const field = role === "parent" ? "readByParent" : "readByKid";
+  const from = role === "parent" ? "kid" : "parent";
+  const todo = messages.filter((m) => m.kidId === msgThreadKid && m.from === from && !m[field]);
+  for (const m of todo) {
+    try { await updateDoc(doc(db, "families", FAMILY_ID, "messages", m.id), { [field]: true }); }
+    catch (err) { console.error(err); }
+  }
+}
+
+async function sendMessage() {
+  const input = $("#msgInput");
+  const text = input.value.trim();
+  if (!text) return;
+  if (!msgThreadKid) { toast("Pick who you're messaging first"); return; }
+  const kid = (family?.kids || []).find((k) => k.id === msgThreadKid);
+  input.value = "";
+  const ok = await safeWrite(
+    () => addDoc(messagesCol, {
+      kidId: msgThreadKid,
+      from: role === "parent" ? "parent" : "kid",
+      fromName: role === "parent" ? "Home" : (kid?.name || "Me"),
+      text,
+      date: new Date().toISOString(),
+      readByParent: role === "parent",
+      readByKid: role !== "parent",
+    }),
+    "Couldn't send that"
+  );
+  if (ok) toast("Sent");
+}
+
+$("#msgBtn").onclick = openMessages;
+$("#msgClose").onclick = () => ($("#msgModal").hidden = true);
+$("#msgSend").onclick = sendMessage;
+$("#msgInput").addEventListener("keydown", (e) => { if (e.key === "Enter") sendMessage(); });
+
 /* ---------------- history ---------------- */
 
 function renderHistory() {
@@ -1210,7 +1521,7 @@ function renderTrends() {
 
   const buckets = periodBuckets(analyticsPeriod);
   const kid = (family?.kids || []).find((k) => k.id === activeKid);
-  const accent = kid?.accent || "#D4A039";
+  const accent = accentOf(kid);
   const labels = buckets.map((b) => b.label);
 
   const habitData = buckets.map((b) => earnedIn(b.start, b.end).filter(isHabitish).reduce((s, e) => s + e.points, 0));
